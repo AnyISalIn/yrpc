@@ -65,7 +65,8 @@ func (p *Peer) run() {
 		stream, err := p.session.AcceptStream()
 		if err != nil {
 			if err == io.EOF {
-				continue
+				p.logger.Printf("%v", err)
+				return
 			}
 			p.logger.Printf("failed to accept stream %v", err)
 			return

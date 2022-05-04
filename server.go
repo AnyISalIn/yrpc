@@ -49,6 +49,7 @@ func (s *Server) AcceptPeer(lis net.Listener) (*Peer, error) {
 				s.connCn <- conn
 			}
 		}()
+		s.accepted = true
 	}
 
 WAIT:
