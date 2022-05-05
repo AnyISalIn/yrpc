@@ -1,10 +1,10 @@
 package yrpc
 
 import (
+	"errors"
 	"fmt"
 	"github.com/AnyISalIn/yrpc/rpc"
 	"io"
-	"log"
 	"sync"
 )
 
@@ -31,7 +31,6 @@ func (s *Handler) Register(name string, fn rpc.StreamHandler) error {
 }
 
 func (s *Handler) ServeConn(conn io.ReadWriteCloser, req *Request) error {
-
 	s.mutex.Lock()
 	method, got := s.handlers[req.ServiceMethod]
 	s.mutex.Unlock()
@@ -40,10 +39,8 @@ func (s *Handler) ServeConn(conn io.ReadWriteCloser, req *Request) error {
 		return fmt.Errorf("can't found servicemethod %s", req.ServiceMethod)
 	}
 
-	go func() {
-		if err := method(conn); err != nil {
-			log.Printf("[streamHandler] method return errors %v", err)
-		}
-	}()
+	if err := method(conn); err != nil {
+		return errors.New(fmt.Sprintf("[streamHandler] method return errors %v", err))
+	}
 	return nil
 }

@@ -1,36 +1,30 @@
 package bastion
 
 import (
-	"encoding/gob"
 	"github.com/AnyISalIn/yrpc"
 	shared "github.com/AnyISalIn/yrpc/shared"
 	"io"
 	"log"
 	"net"
+	"os"
 	"sync"
 )
 
-func (a *agent) PerformCmd(cmd string, tty bool, rwc io.ReadWriteCloser) error {
-	conn, err := a.peer.Stream(AGENT_EXEC)
+var serverLogger = log.New(os.Stdout, "[server] ", shared.LogFlags)
+
+func (a *agent) ForwardStream(serviceMethod string, rwc io.ReadWriteCloser) error {
+	//serverLogger.Printf("forwarding %s", serviceMethod)
+	conn, err := a.peer.Stream(serviceMethod)
 	if err != nil {
-		log.Printf("[server] failed to stream agent exec %v", err)
+		serverLogger.Printf("failed to stream agent exec %v", err)
 		return err
 	}
 	defer conn.Close()
 
-	log.Printf("[server] stream exec on agent %s", a.name)
-
-	args := &ExecArgs{Cmd: cmd, TTY: tty}
-
-	encoder := gob.NewEncoder(conn)
-	if err := encoder.Encode(args); err != nil {
-		log.Printf("[server] failed to encode agent exec %v", err)
-		return err
-	}
-
-	log.Printf("[server] encoded args on agent %s, waiting reply", a.name)
+	//serverLogger.Printf("bridging %T <-> %T", rwc, conn)
 
 	Bridge(conn, rwc)
+
 	return nil
 }
 
@@ -51,7 +45,7 @@ func (s *Server) Serve(listener net.Listener) {
 	bastion := new(Bastion)
 	bastion.agentMap = s.agentMap
 	if err := srv.Register(bastion); err != nil {
-		log.Fatalf("[server] failed to register %v", err)
+		serverLogger.Fatalf("failed to register %v", err)
 	}
 
 	for {
@@ -68,7 +62,7 @@ func (s *Server) Serve(listener net.Listener) {
 func (s *Server) isAgent(peer *yrpc.Peer) bool {
 	var role string
 	if err := peer.Call(AGENT_ROLE, &shared.Empty{}, &role); err != nil {
-		log.Fatalf("[server] failed to get client role %v", err)
+		serverLogger.Fatalf("failed to get client role %v", err)
 	}
 	return role == "agent"
 }
@@ -76,9 +70,9 @@ func (s *Server) isAgent(peer *yrpc.Peer) bool {
 func (s *Server) handleAgent(peer *yrpc.Peer) {
 	var agentName string
 	if err := peer.Call(AGENT_WHOAMI, &shared.Empty{}, &agentName); err != nil {
-		log.Fatalf("[server] failed to get agent name %v", err)
+		serverLogger.Fatalf("failed to get agent name %v", err)
 	}
-	log.Printf("[server] accept agent %s", agentName)
+	serverLogger.Printf("accept agent %s", agentName)
 
 	s.agentLock.Lock()
 	agt, got := s.agentMap[agentName]
@@ -92,9 +86,9 @@ func (s *Server) handleAgent(peer *yrpc.Peer) {
 
 	//buf := bufio.NewReadWriter([]byte{})
 	//if err := agt.PerformCmd("ls", false, buf); err != nil {
-	//	log.Printf("[server] failed to perform cmd on %s", agentName)
+	//	serverLogger.Printf("failed to perform cmd on %s", agentName)
 	//} else {
-	//	log.Printf(buf.String())
+	//	serverLogger.Printf(buf.String())
 	//}
 
 }

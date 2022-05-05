@@ -1,8 +1,10 @@
 package yrpc
 
 import (
-	"encoding/gob"
+	"errors"
+	"fmt"
 	shared "github.com/AnyISalIn/yrpc/shared"
+	"github.com/ugorji/go/codec"
 	"io"
 	"log"
 	"net/rpc"
@@ -16,6 +18,7 @@ type YRPC struct {
 }
 
 func New() *YRPC {
+	log.SetFlags(shared.LogFlags)
 	return &YRPC{rpcServer: rpc.NewServer(), streamHandler: NewHandler()}
 }
 
@@ -49,26 +52,22 @@ func (y *YRPC) tryRegisterStream(revr any) error {
 	return nil
 }
 
-func (y *YRPC) RemoteCall(conn io.ReadWriteCloser) {
+func (y *YRPC) RemoteCall(conn io.ReadWriteCloser) error {
 	y.rpcServer.ServeConn(conn)
+	return nil
 }
 
-func (y *YRPC) RemoteStream(conn io.ReadWriteCloser) {
-	encoder := gob.NewEncoder(conn)
-	decoder := gob.NewDecoder(conn)
+func (y *YRPC) RemoteStream(conn io.ReadWriteCloser) error {
+	decoder := codec.NewDecoder(conn, &codec.MsgpackHandle{})
 
+	log.Printf("remote stream received req\n")
 	req := new(Request)
 	if err := decoder.Decode(req); err != nil {
-		log.Printf("[yrpc] can't decode conn %v", err)
-	}
-	ack := new(shared.ACK)
-	if err := encoder.Encode(ack); err != nil {
-		log.Printf("[yrpc] can't encode conn %v", err)
+		return errors.New(fmt.Sprintf("[yrpc] can't decode conn %v", err))
 	}
 
-	if err := y.streamHandler.ServeConn(conn, req); err != nil {
-		log.Printf("[yrpc] can't serve stream conn %v", err)
-	}
+	log.Printf("remote stream serve conn\n")
+	return y.streamHandler.ServeConn(conn, req)
 }
 
 func (y *YRPC) Call(conn io.ReadWriteCloser, serviceMethod string, args any, reply any) error {
@@ -77,19 +76,13 @@ func (y *YRPC) Call(conn io.ReadWriteCloser, serviceMethod string, args any, rep
 }
 
 func (y *YRPC) Stream(conn io.ReadWriteCloser, serviceMethod string) error {
-	decoder := gob.NewDecoder(conn)
-	encoder := gob.NewEncoder(conn)
+	encoder := codec.NewEncoder(conn, &codec.MsgpackHandle{})
 
 	req := new(Request)
 	req.ServiceMethod = serviceMethod
 	if err := encoder.Encode(req); err != nil {
 		return err
 	}
-	ack := new(shared.ACK)
-	if err := decoder.Decode(ack); err != nil {
-		return err
-	}
-
 	return nil
 }
 

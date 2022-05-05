@@ -3,9 +3,13 @@ package main
 import (
 	"flag"
 	"github.com/AnyISalIn/yrpc/examples/bastion"
+	shared "github.com/AnyISalIn/yrpc/shared"
 	"log"
 	"net"
+	"os"
 )
+
+var logger = log.New(os.Stdout, "[server] ", shared.LogFlags)
 
 func main() {
 
@@ -15,10 +19,10 @@ func main() {
 	srv := bastion.NewServer()
 	listener, err := net.Listen("tcp", *serverAddrPtr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	log.Printf("listening on %s", *serverAddrPtr)
+	logger.Printf("listening on %s", *serverAddrPtr)
 
 	srv.Serve(listener)
 }

@@ -1,10 +1,10 @@
 package yrpc
 
 import (
-	"encoding/gob"
 	internal "github.com/AnyISalIn/yrpc/rpc"
 	shared "github.com/AnyISalIn/yrpc/shared"
 	"github.com/hashicorp/yamux"
+	"github.com/ugorji/go/codec"
 	"io"
 	"log"
 	"net"
@@ -28,7 +28,7 @@ type PeerRequest struct {
 }
 
 func NewPeerWithDial(network string, addr string, yamuxConfig *yamux.Config, rpcImp internal.Interface, any ...any) (peer *Peer, err error) {
-	peer = &Peer{rpcImp: rpcImp, logger: log.New(os.Stdout, "[peer] ", 0)}
+	peer = &Peer{rpcImp: rpcImp, logger: log.New(os.Stdout, "[peer] ", shared.LogFlags)}
 	session, err := dial(network, addr, yamuxConfig)
 	if err != nil {
 		return nil, err
@@ -46,7 +46,7 @@ func NewPeerWithDial(network string, addr string, yamuxConfig *yamux.Config, rpc
 }
 
 func NewPeer(session *yamux.Session, rpcImp internal.Interface, any ...any) (peer *Peer, err error) {
-	peer = &Peer{rpcImp: rpcImp, logger: log.New(os.Stdout, "[peer] ", 0)}
+	peer = &Peer{rpcImp: rpcImp, logger: log.New(os.Stdout, "[peer] ", shared.LogFlags)}
 
 	//for _, a := range any {
 	//	if err := rpcImp.Register(a); err != nil {
@@ -73,35 +73,36 @@ func (p *Peer) run() {
 		}
 
 		go func() {
+			defer stream.Close()
 			req := new(PeerRequest)
-			decoder := gob.NewDecoder(stream)
-			encoder := gob.NewEncoder(stream)
+			decoder := codec.NewDecoder(stream, &codec.MsgpackHandle{})
 
 			if err := decoder.Decode(req); err != nil {
-				if err == io.EOF {
-					return
-				}
-
 				p.logger.Printf("failed to decode %v", err)
 				return
 			}
 
-			ack := new(shared.ACK)
-			if err := encoder.Encode(ack); err != nil {
-				p.logger.Printf("failed to encode %v", err)
-				return
-			}
+			p.logger.Printf("received request %s", req.Type)
+
+			//ack := new(shared.ACK)
+			//if err := encoder.Encode(ack); err != nil {
+			//	p.logger.Printf("failed to encode %v", err)
+			//	return
+			//}
 
 			if req.Type == PeerCall {
-				go p.rpcImp.RemoteCall(stream)
 				p.logger.Printf("%s -> %s [%d] calling", stream.LocalAddr(), stream.RemoteAddr(), stream.StreamID())
+				if err := p.rpcImp.RemoteCall(stream); err != nil {
+					p.logger.Printf("failed to call %v", err)
+				}
 			} else if req.Type == PeerStream {
-				go p.rpcImp.RemoteStream(stream)
 				p.logger.Printf("%s -> %s [%d] streaming", stream.LocalAddr(), stream.RemoteAddr(), stream.StreamID())
+				if err := p.rpcImp.RemoteStream(stream); err != nil {
+					p.logger.Printf("failed to stream %v", err)
+				}
 			} else {
 				panic("")
 			}
-
 		}()
 	}
 }
@@ -116,13 +117,8 @@ func (p *Peer) Call(serviceMethod string, args any, reply any) error {
 
 	req := new(PeerRequest)
 	req.Type = PeerCall
-	encoder := gob.NewEncoder(stream)
-	decoder := gob.NewDecoder(stream)
+	encoder := codec.NewEncoder(stream, &codec.MsgpackHandle{})
 	if err := encoder.Encode(req); err != nil {
-		return err
-	}
-	ack := new(shared.ACK)
-	if err := decoder.Decode(ack); err != nil {
 		return err
 	}
 
@@ -142,15 +138,19 @@ func (p *Peer) Stream(serviceMethod string) (io.ReadWriteCloser, error) {
 	// trigger serve conn
 	req := new(PeerRequest)
 	req.Type = PeerStream
-	encoder := gob.NewEncoder(stream)
-	decoder := gob.NewDecoder(stream)
+	encoder := codec.NewEncoder(stream, &codec.MsgpackHandle{})
+
+	//decoder := gob.NewDecoder(stream)
 	if err := encoder.Encode(req); err != nil {
 		return nil, err
 	}
-	ack := new(shared.ACK)
-	if err := decoder.Decode(ack); err != nil {
-		return nil, err
-	}
+
+	p.logger.Printf("sending request %s", req.Type)
+
+	//ack := new(shared.ACK)
+	//if err := decoder.Decode(ack); err != nil {
+	//	return nil, err
+	//}
 
 	if err := p.rpcImp.Stream(stream, serviceMethod); err != nil {
 		stream.Close()

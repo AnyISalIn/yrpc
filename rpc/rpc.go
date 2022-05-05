@@ -1,12 +1,14 @@
 package rpc
 
-import "io"
+import (
+	"io"
+)
 
 type StreamHandler func(rwc io.ReadWriteCloser) error
 
 type Server interface {
-	RemoteCall(conn io.ReadWriteCloser)
-	RemoteStream(conn io.ReadWriteCloser)
+	RemoteCall(conn io.ReadWriteCloser) error
+	RemoteStream(conn io.ReadWriteCloser) error
 
 	Register(method any) error
 }

@@ -3,6 +3,7 @@ package yrpc
 import (
 	"github.com/AnyISalIn/yrpc/rpc"
 	"github.com/AnyISalIn/yrpc/rpc/yrpc"
+	shared "github.com/AnyISalIn/yrpc/shared"
 	"github.com/hashicorp/yamux"
 	"log"
 	"net"
@@ -30,7 +31,7 @@ type ServerConfig struct {
 }
 
 func DefaultServerConfig() *ServerConfig {
-	return &ServerConfig{Impl: yrpc.New(), Logger: log.New(os.Stdout, "[server] ", 0)}
+	return &ServerConfig{Impl: yrpc.New(), Logger: log.New(os.Stdout, "[server] ", shared.LogFlags)}
 }
 
 func (s *Server) Register(any any) error {

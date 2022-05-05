@@ -61,6 +61,7 @@ func serverLoop() {
 			if rwc, err := peer.Stream("ExampleClient.Logs"); err != nil {
 				log.Fatal(err)
 			} else {
+				defer rwc.Close()
 				reader := bufio.NewReader(rwc)
 				for {
 					line, _, err := reader.ReadLine()
@@ -100,6 +101,7 @@ func clientLoop() {
 
 func main() {
 	go serverLoop()
+	time.Sleep(time.Millisecond * 500)
 	clientLoop()
 
 }

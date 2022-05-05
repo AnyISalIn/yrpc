@@ -1,16 +1,19 @@
 package main
 
 import (
-	"encoding/gob"
 	"flag"
 	"github.com/AnyISalIn/yrpc"
 	"github.com/AnyISalIn/yrpc/examples/bastion"
+	shared "github.com/AnyISalIn/yrpc/shared"
+	"github.com/ugorji/go/codec"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 )
+
+var logger = log.New(os.Stdout, "[client] ", shared.LogFlags)
 
 type Agent struct{}
 
@@ -30,18 +33,22 @@ func main() {
 	defer client.Close()
 	agt := new(Agent)
 	if err := client.Register(agt); err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
 	peer, err := client.Dial("tcp", *serverAddrPtr)
 	if err != nil {
-		log.Fatal(err)
+		logger.Fatal(err)
 	}
 
-	args := bastion.BastionExecArgs{
-		AgentID: *agentId,
-		Cmd:     strings.Join(flag.Args(), " "),
-		TTY:     *tty,
+	forwardArgs := bastion.ForwardArgs{
+		AgentID:       *agentId,
+		ServiceMethod: bastion.AGENT_EXEC,
+	}
+
+	execArgs := bastion.ExecArgs{
+		Cmd: strings.Join(flag.Args(), " "),
+		TTY: *tty,
 	}
 
 	ch := make(chan os.Signal, 1)
@@ -51,16 +58,25 @@ func main() {
 		}
 	}()
 
-	conn, err := peer.Stream(bastion.BASTION_EXEC)
+	conn, err := peer.Stream(bastion.BASTION_FORWARD_STREAM)
 	if err != nil {
-		log.Panic(conn)
+		logger.Panic(conn)
 	}
 	defer conn.Close()
 
-	encoder := gob.NewEncoder(conn)
-	if err := encoder.Encode(args); err != nil {
-		log.Panic(err)
+	encoder := codec.NewEncoder(conn, &codec.MsgpackHandle{})
+	if err := encoder.Encode(forwardArgs); err != nil {
+		logger.Panic(err)
 	}
+
+	logger.Printf("sending forward request to bastion")
+
+	//encoder = gob.NewEncoder(conn)
+	if err := encoder.Encode(execArgs); err != nil {
+		logger.Panic(err)
+	}
+
+	logger.Printf("sending exec request to agent")
 
 	if *tty {
 		bastion.Bridge(conn, os.Stdin)

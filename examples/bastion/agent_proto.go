@@ -1,8 +1,9 @@
 package bastion
 
 import (
-	"encoding/gob"
+	shared "github.com/AnyISalIn/yrpc/shared"
 	"github.com/creack/pty"
+	"github.com/ugorji/go/codec"
 	"io"
 	"log"
 	"os"
@@ -14,6 +15,8 @@ const (
 	AGENT_ROLE   = "Agent.Role"
 	AGENT_EXEC   = "Agent.Exec"
 )
+
+var agentLogger = log.New(os.Stdout, "[agent] ", shared.LogFlags)
 
 type Agent struct{}
 
@@ -36,26 +39,27 @@ type ExecArgs struct {
 func (a *Agent) Exec(rwc io.ReadWriteCloser) error {
 	defer rwc.Close()
 	//encoder := gob.NewEncoder(rwc)
-	log.Printf("[agent] handle stream exec, waiting exec args ...")
-	decoder := gob.NewDecoder(rwc)
+	agentLogger.Printf("[agent] handle stream exec, waiting exec args ...")
+	decoder := codec.NewDecoder(rwc, &codec.MsgpackHandle{})
+
 	args := new(ExecArgs)
 	if err := decoder.Decode(args); err != nil {
 		return err
 	}
 
-	log.Printf("[agent] received exec args %v", args)
+	agentLogger.Printf("[agent] received exec args %v", args)
 
 	if args.TTY {
 		cmd := exec.Command(args.Cmd)
 		ptmx, err := pty.Start(cmd)
 		if err != nil {
-			log.Printf("[agent] failed to start tty %v", err)
+			agentLogger.Printf("[agent] failed to start tty %v", err)
 			return err
 		}
 
-		defer func() { _ = ptmx.Close() }() // Best effort.
-		go func() { _, _ = io.Copy(ptmx, rwc) }()
-		_, _ = io.Copy(rwc, ptmx)
+		defer ptmx.Close()
+
+		Bridge(rwc, ptmx)
 
 		return nil
 	}
@@ -64,7 +68,7 @@ func (a *Agent) Exec(rwc io.ReadWriteCloser) error {
 	cmd.Stderr = rwc
 
 	if err := cmd.Run(); err != nil {
-		log.Printf("[agent] failed to run cmd %v", err)
+		agentLogger.Printf("[agent] failed to run cmd %v", err)
 	}
 	return nil
 }
